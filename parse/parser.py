@@ -34,47 +34,27 @@ with open("/home/benjis/code/bug-benchmarks/defects4j/projects.txt") as f:
 projects
 
 #%%
-import re
-
-projects_root = "/home/benjis/code/bug-benchmarks/defects4j/projects"
-for project in projects:
-    project_root = os.path.join(projects_root, project + "_1b")
-    with open(os.path.join(project_root, "defects4j.build.properties")) as properties_f:
-        test_prefix = re.findall(r"d4j.dir.src.tests=(.*)", properties_f.read())[0]
-    with open(os.path.join(project_root, "tests.all")) as test_f:
-        for test_class in test_f:
-            test_class = test_class.strip()
-            test_filename = "/".join(test_class.split("."))
-            if "$" in test_filename:
-                test_filename, class_name = test_filename.split("$")
-            else:
-                class_name = test_class.split(".")[-1]
-            test_filepath = os.path.join(
-                projects_root, project + "_1b", test_prefix, test_filename + ".java"
-            )
-            if not os.path.exists(test_filepath):
-                print(
-                    "could not locate class for test", project, test_prefix, test_class
-                )
-
-#%%
 
 
 def dfs(node, fn, indent=0, **kwargs):
-    fn(node=node, indent=indent, **kwargs)
+    result = 0
+    result += fn(node=node, indent=indent, **kwargs)
     for c in node.children:
-        dfs(c, fn, indent + 1, **kwargs)
+        result += dfs(c, fn, indent + 1, **kwargs)
+    return result
 
 
 def bfs(root, fn, **kwargs):
+    result = 0
     q = [(root, 0)]
     while len(q) > 0:
         n, indent = q.pop(0)
 
-        fn(node=n, indent=indent, **kwargs)
+        result += fn(node=n, indent=indent, **kwargs)
 
         for c in n.children:
-            q.append((c, indent + 1))
+            result += q.append((c, indent + 1))
+    return result
 
 
 def print_node(node, indent, **kwargs):
@@ -93,6 +73,7 @@ def get_child(node, fn):
 
 
 def declare_class(node, class_name, **kwargs):
+    count = 0
     if node.type == "class_declaration":
         ident = get_child(node, lambda c: c.type == "identifier")
         if ident.text.decode() == class_name:
@@ -101,20 +82,55 @@ def declare_class(node, class_name, **kwargs):
             for test_method in test_methods:
                 method_ident = get_child(test_method, lambda c: c.type == "identifier").text.decode()
                 if method_ident.startswith("test"):
-                    print(class_name + "." + method_ident)
+                    # print(class_name + "." + method_ident)
+                    count += 1
+    return count
 
 
 def parse_test_class(filename, class_name):
     with open(filename, "rb") as f:
         tree = parser.parse(f.read())
-    print(tree)
+    # print(tree)
     # dfs(tree.root_node, print_node, class_name=class_name)
-    dfs(tree.root_node, declare_class, class_name=class_name)
+    return dfs(tree.root_node, declare_class, class_name=class_name)
 
 
 parse_test_class(
     "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java",
     "CategoryLineAnnotationTests",
 )
+
+#%%
+import re
+
+projects_root = "/home/benjis/code/bug-benchmarks/defects4j/projects"
+all_num_methods = 0
+for project in projects:
+    project_num_methods = 0
+    project_root = os.path.join(projects_root, project + "_1b")
+    with open(os.path.join(project_root, "defects4j.build.properties")) as properties_f:
+        test_prefix = re.findall(r"d4j.dir.src.tests=(.*)", properties_f.read())[0]
+    with open(os.path.join(project_root, "tests.all")) as test_f:
+        for test_class in test_f:
+            test_class = test_class.strip()
+            test_filename = "/".join(test_class.split("."))
+            if "$" in test_filename:
+                test_filename, class_name = test_filename.split("$")
+            else:
+                class_name = test_class.split(".")[-1]
+            test_filepath = os.path.join(
+                projects_root, project + "_1b", test_prefix, test_filename + ".java"
+            )
+            if not os.path.exists(test_filepath):
+                print(
+                    "could not locate class for test", project, test_prefix, test_class
+                )
+                continue
+            num_methods = parse_test_class(test_filepath, class_name)
+            print(test_class, "class had", num_methods, "test methods")
+            project_num_methods += num_methods
+    print(project, "project had", project_num_methods, "test methods")
+    all_num_methods += project_num_methods
+print(all_num_methods, "total test methods")
 
 # %%
