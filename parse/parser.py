@@ -1,4 +1,5 @@
 #%%
+from typing import overload
 from tree_sitter import Language, Parser
 import os
 
@@ -35,32 +36,76 @@ def parse_file(filename):
 
 
 #%%
-# projects = ["Chart"]
+# get all projects in d4j
 with open("/home/benjis/code/bug-benchmarks/defects4j/projects.txt") as f:
     projects = f.read().splitlines(keepends=False)
 projects
 
 #%%
+# utilities for general tree traversal
+import abc
+import warnings
+import copy
 
 
-def dfs(node, fn, indent=0, **kwargs):
-    result = 0
-    result += fn(node=node, indent=indent, **kwargs)
+class NodeTraversalResult(abc.ABC):
+    @abc.abstractmethod
+    def __init__(self):
+        pass
+
+    def __iadd__(self, other):
+        return self
+
+    def __add__(self, other):
+        return self
+
+    def __str__(self) -> str:
+        return str(self.data)
+
+    def __repr__(self):
+        return str(self)
+
+
+class NoResult(NodeTraversalResult):
+    def __init__(self):
+        super().__init__()
+        self.data = None
+
+    def __iadd__(self, other):
+        if other is not None:
+            warnings.warn(f"result {other} is not None")
+        return self
+
+    def __add__(self, other):
+        if other is not None:
+            warnings.warn(f"result {other} is not None")
+        return self
+
+
+class IntegerResult(NodeTraversalResult):
+    def __init__(self, data=0):
+        super().__init__()
+        self.data = data
+
+    def __iadd__(self, other):
+        if isinstance(other, IntegerResult):
+            other_data = other.data
+        else:
+            other_data = other
+        self.data += other_data
+        return self
+
+    def __add__(self, other):
+        result = copy.deepcopy(self)
+        result += other
+        return IntegerResult(self.data + result)
+
+
+def dfs(node, fn, result_cls=NoResult, indent=0, **kwargs):
+    result = result_cls()
+    result += fn(node=node, indent=indent, **kwargs) or 0
     for c in node.children:
-        result += dfs(c, fn, indent + 1, **kwargs)
-    return result
-
-
-def bfs(root, fn, **kwargs):
-    result = 0
-    q = [(root, 0)]
-    while len(q) > 0:
-        n, indent = q.pop(0)
-
-        result += fn(node=n, indent=indent, **kwargs)
-
-        for c in n.children:
-            result += q.append((c, indent + 1))
+        result += dfs(c, fn, result_cls=result_cls, indent=indent + 1, **kwargs) or 0
     return result
 
 
@@ -82,10 +127,15 @@ def print_node(node, indent, **kwargs):
     print(" " * (indent * 2), node, text)
 
 
-def parse_print(filename, class_name):
+def parse_print(filename):
     tree = parse_file(filename)
     print(tree)
-    dfs(tree.root_node, print_node, class_name=class_name)
+    dfs(tree.root_node, fn=print_node, class_name=class_name)
+
+
+parse_print(
+    "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java"
+)
 
 
 #%%
@@ -103,14 +153,18 @@ def declare_class(node, class_name, **kwargs):
                     test_method, lambda c: c.type == "identifier"
                 ).text.decode()
                 if method_ident.startswith("test"):
-                    # print(class_name + "." + method_ident)
                     count += 1
     return count
 
 
 def parse_test_class(filename, class_name):
     tree = parse_file(filename)
-    return dfs(tree.root_node, declare_class, class_name=class_name)
+    return dfs(
+        tree.root_node,
+        fn=declare_class,
+        result_cls=IntegerResult,
+        class_name=class_name,
+    )
 
 
 parse_test_class(
