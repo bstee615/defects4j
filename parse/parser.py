@@ -27,6 +27,13 @@ LANGUAGE = Language(lib_file, languages[0])
 parser = Parser()
 parser.set_language(LANGUAGE)
 
+
+def parse_file(filename):
+    with open(filename, "rb") as f:
+        tree = parser.parse(f.read())
+    return tree
+
+
 #%%
 # projects = ["Chart"]
 with open("/home/benjis/code/bug-benchmarks/defects4j/projects.txt") as f:
@@ -57,6 +64,17 @@ def bfs(root, fn, **kwargs):
     return result
 
 
+def get_children(node, fn):
+    return [c for c in node.children if fn(c)]
+
+
+def get_child(node, fn):
+    return next(iter(get_children(node, fn)))
+
+
+#%%
+
+
 def print_node(node, indent, **kwargs):
     text = node.text.decode()
     if "\n" in text:
@@ -64,12 +82,13 @@ def print_node(node, indent, **kwargs):
     print(" " * (indent * 2), node, text)
 
 
-def get_children(node, fn):
-    return [c for c in node.children if fn(c)]
+def parse_print(filename, class_name):
+    tree = parse_file(filename)
+    print(tree)
+    dfs(tree.root_node, print_node, class_name=class_name)
 
 
-def get_child(node, fn):
-    return next(iter(get_children(node, fn)))
+#%%
 
 
 def declare_class(node, class_name, **kwargs):
@@ -80,7 +99,9 @@ def declare_class(node, class_name, **kwargs):
             body = get_child(node, lambda c: c.type == "class_body")
             test_methods = get_children(body, lambda c: c.type == "method_declaration")
             for test_method in test_methods:
-                method_ident = get_child(test_method, lambda c: c.type == "identifier").text.decode()
+                method_ident = get_child(
+                    test_method, lambda c: c.type == "identifier"
+                ).text.decode()
                 if method_ident.startswith("test"):
                     # print(class_name + "." + method_ident)
                     count += 1
@@ -88,10 +109,7 @@ def declare_class(node, class_name, **kwargs):
 
 
 def parse_test_class(filename, class_name):
-    with open(filename, "rb") as f:
-        tree = parser.parse(f.read())
-    # print(tree)
-    # dfs(tree.root_node, print_node, class_name=class_name)
+    tree = parse_file(filename)
     return dfs(tree.root_node, declare_class, class_name=class_name)
 
 
@@ -101,6 +119,7 @@ parse_test_class(
 )
 
 #%%
+# print number of test methods in each class/project/total
 import re
 
 projects_root = "/home/benjis/code/bug-benchmarks/defects4j/projects"
