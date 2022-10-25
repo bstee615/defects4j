@@ -93,19 +93,19 @@ class IntegerResult(NodeTraversalResult):
             other_data = other
         self.data += other_data
         return self
-    
+
     def __add__(self, other):
         result = copy.deepcopy(self)
         result += other
         return result
-    
+
     def __radd__(self, other):
         return self.data + other
 
 
 def dfs(node, fn, result_cls=NoResult, indent=0, **kwargs):
     result = result_cls()
-    result += fn(node=node, indent=indent, **kwargs) or 0
+    result += fn(node=node, indent=indent, result_cls=result_cls, **kwargs) or 0
     if not result.should_recurse_children:
         return result
     for c in node.children:
@@ -119,33 +119,6 @@ def get_children(node, fn):
 
 def get_child(node, fn):
     return next(iter(get_children(node, fn)))
-
-
-#%%
-# print all nodes, stop at class declaration
-
-
-def print_node_stop_at_import(node, indent, **kwargs):
-    text = node.text.decode()
-    if "\n" in text:
-        text = text.splitlines(keepends=False)[0] + "..."
-    print(" " * (indent * 2), node, text)
-
-    result = NoResult()
-    if node.type == "import_declaration":
-        result.should_recurse_children = False
-    return result
-
-
-def parse_print(filename):
-    tree = parse_file(filename)
-    print(tree)
-    dfs(tree.root_node, fn=print_node_stop_at_import)
-
-
-parse_print(
-    "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java"
-)
 
 
 #%%
@@ -172,45 +145,47 @@ parse_print(
 #%%
 
 
-def declare_class(node, class_name, **kwargs):
-    count = 0
-    if node.type == "class_declaration":
-        ident = get_child(node, lambda c: c.type == "identifier")
-        if ident.text.decode() == class_name:
-            body = get_child(node, lambda c: c.type == "class_body")
-            test_methods = get_children(body, lambda c: c.type == "method_declaration")
-            for test_method in test_methods:
-                method_ident = get_child(
-                    test_method, lambda c: c.type == "identifier"
-                ).text.decode()
-                if method_ident.startswith("test"):
-                    count += 1
-    return count
+def count_filenames(node, result_cls, **kwargs):
+    if node.type == "string_literal":
+        string_text = node.text.decode()
+        # all_file_exts = re.findall(
+        #     r"[\w_-]+\.[\w]+",
+        #     string_text,
+        # )
+        # for ext in all_file_exts:
+        #     print("FFF", ext)
+        found_file_exts = re.findall(
+            # I got this list of filenames by printing all patterns matching r"[\w_-]+*\.[\w]+", then manually filtering to valid file extensions.
+            r'\.(csv|data|html|jar|java|jpg|js|jsdoc|json|jsp|tgz|txt|xml|zip)',
+            string_text,
+        )
+        num_found_file_exts = len(found_file_exts)
+        if num_found_file_exts > 0:
+            print("found", num_found_file_exts, "file extensions", found_file_exts, "in literal string", string_text)
+            return num_found_file_exts
+    return 0
 
 
-def parse_test_class(filename, class_name):
+def test_filenames_present(filename):
     tree = parse_file(filename)
     return dfs(
         tree.root_node,
-        fn=declare_class,
+        fn=count_filenames,
         result_cls=IntegerResult,
-        class_name=class_name,
     )
 
 
-parse_test_class(
-    "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java",
-    "CategoryLineAnnotationTests",
+test_filenames_present(
+    "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java"
 )
 
 #%%
-# print number of test methods in each class/project/total
+# print number of filenames in all test methods
 import re
 
 projects_root = "/home/benjis/code/bug-benchmarks/defects4j/projects"
-all_num_methods = 0
+all_filenames_present = 0
 for project in projects:
-    project_num_methods = 0
     project_root = os.path.join(projects_root, project + "_1b")
     with open(os.path.join(project_root, "defects4j.build.properties")) as properties_f:
         test_prefix = re.findall(r"d4j.dir.src.tests=(.*)", properties_f.read())[0]
@@ -230,11 +205,9 @@ for project in projects:
                     "could not locate class for test", project, test_prefix, test_class
                 )
                 continue
-            num_methods = parse_test_class(test_filepath, class_name)
-            print(test_class, "class had", num_methods, "test methods")
-            project_num_methods += num_methods
-    print(project, "project had", project_num_methods, "test methods")
-    all_num_methods += project_num_methods
-print(all_num_methods, "total test methods")
+
+            all_filenames_present += test_filenames_present(test_filepath)
+
+print(all_filenames_present, "filenames present")
 
 # %%
