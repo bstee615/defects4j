@@ -51,12 +51,11 @@ import copy
 class NodeTraversalResult(abc.ABC):
     @abc.abstractmethod
     def __init__(self):
-        pass
+        self.should_recurse_children = True
 
     def __iadd__(self, other):
-        return self
-
-    def __add__(self, other):
+        if isinstance(other, NodeTraversalResult):
+            self.should_recurse_children &= other.should_recurse_children
         return self
 
     def __str__(self) -> str:
@@ -65,6 +64,9 @@ class NodeTraversalResult(abc.ABC):
     def __repr__(self):
         return str(self)
 
+    def stop(self):
+        self.should_recurse_children = False
+
 
 class NoResult(NodeTraversalResult):
     def __init__(self):
@@ -72,12 +74,8 @@ class NoResult(NodeTraversalResult):
         self.data = None
 
     def __iadd__(self, other):
-        if other is not None:
-            warnings.warn(f"result {other} is not None")
-        return self
-
-    def __add__(self, other):
-        if other is not None:
+        super().__iadd__(other)
+        if not (isinstance(other, NoResult) or other is None):
             warnings.warn(f"result {other} is not None")
         return self
 
@@ -88,6 +86,7 @@ class IntegerResult(NodeTraversalResult):
         self.data = data
 
     def __iadd__(self, other):
+        super().__iadd__(other)
         if isinstance(other, IntegerResult):
             other_data = other.data
         else:
@@ -95,15 +94,12 @@ class IntegerResult(NodeTraversalResult):
         self.data += other_data
         return self
 
-    def __add__(self, other):
-        result = copy.deepcopy(self)
-        result += other
-        return IntegerResult(self.data + result)
-
 
 def dfs(node, fn, result_cls=NoResult, indent=0, **kwargs):
     result = result_cls()
     result += fn(node=node, indent=indent, **kwargs) or 0
+    if not result.should_recurse_children:
+        return result
     for c in node.children:
         result += dfs(c, fn, result_cls=result_cls, indent=indent + 1, **kwargs) or 0
     return result
@@ -115,6 +111,33 @@ def get_children(node, fn):
 
 def get_child(node, fn):
     return next(iter(get_children(node, fn)))
+
+
+#%%
+# print all nodes, stop at class declaration
+
+
+def print_node_stop_at_import(node, indent, **kwargs):
+    text = node.text.decode()
+    if "\n" in text:
+        text = text.splitlines(keepends=False)[0] + "..."
+    print(" " * (indent * 2), node, text)
+
+    result = NoResult()
+    if node.type == "import_declaration":
+        result.should_recurse_children = False
+    return result
+
+
+def parse_print(filename):
+    tree = parse_file(filename)
+    print(tree)
+    dfs(tree.root_node, fn=print_node_stop_at_import)
+
+
+parse_print(
+    "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java"
+)
 
 
 #%%
@@ -130,7 +153,7 @@ def print_node(node, indent, **kwargs):
 def parse_print(filename):
     tree = parse_file(filename)
     print(tree)
-    dfs(tree.root_node, fn=print_node, class_name=class_name)
+    dfs(tree.root_node, fn=print_node)
 
 
 parse_print(
