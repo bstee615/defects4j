@@ -84,27 +84,31 @@ def print_node(node, indent, **kwargs):
     print(" " * (indent * 2), node, text)
 
 
+def get_children(node, fn):
+    return [c for c in node.children if fn(c)]
+
+
+def get_child(node, fn):
+    return next(iter(get_children(node, fn)))
+
+
 def declare_class(node, class_name, **kwargs):
     if node.type == "class_declaration":
-        ident = next(
-            (
-                c
-                for c in node.children
-                if c.type == "identifier" and c.text.decode() == class_name
-            ),
-            None,
-        )
-        if ident is not None:
-            print("got class", node)
-        else:
-            print(node, "could not get class")
+        ident = get_child(node, lambda c: c.type == "identifier")
+        if ident.text.decode() == class_name:
+            body = get_child(node, lambda c: c.type == "class_body")
+            test_methods = get_children(body, lambda c: c.type == "method_declaration")
+            for test_method in test_methods:
+                method_ident = get_child(test_method, lambda c: c.type == "identifier").text.decode()
+                if method_ident.startswith("test"):
+                    print(class_name + "." + method_ident)
 
 
 def parse_test_class(filename, class_name):
     with open(filename, "rb") as f:
         tree = parser.parse(f.read())
     print(tree)
-    dfs(tree.root_node, print_node, class_name=class_name)
+    # dfs(tree.root_node, print_node, class_name=class_name)
     dfs(tree.root_node, declare_class, class_name=class_name)
 
 
