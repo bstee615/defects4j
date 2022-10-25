@@ -93,6 +93,14 @@ class IntegerResult(NodeTraversalResult):
             other_data = other
         self.data += other_data
         return self
+    
+    def __add__(self, other):
+        result = copy.deepcopy(self)
+        result += other
+        return result
+    
+    def __radd__(self, other):
+        return self.data + other
 
 
 def dfs(node, fn, result_cls=NoResult, indent=0, **kwargs):
