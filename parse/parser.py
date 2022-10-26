@@ -49,9 +49,16 @@ import copy
 
 
 class NodeTraversalResult(abc.ABC):
-    @abc.abstractmethod
-    def __init__(self):
+    def __init__(self, data=None):
+        if data is None:
+            self.data = self.default()
+        else:
+            self.data = None
         self.should_recurse_children = True
+
+    @abc.abstractclassmethod
+    def default(cls):
+        pass
 
     def __iadd__(self, other):
         if isinstance(other, NodeTraversalResult):
@@ -69,9 +76,9 @@ class NodeTraversalResult(abc.ABC):
 
 
 class NoResult(NodeTraversalResult):
-    def __init__(self):
-        super().__init__()
-        self.data = None
+    @classmethod
+    def default(cls):
+        return None
 
     def __iadd__(self, other):
         super().__iadd__(other)
@@ -81,9 +88,9 @@ class NoResult(NodeTraversalResult):
 
 
 class IntegerResult(NodeTraversalResult):
-    def __init__(self, data=0):
-        super().__init__()
-        self.data = data
+    @classmethod
+    def default(cls):
+        return 0
 
     def __iadd__(self, other):
         super().__iadd__(other)
@@ -103,13 +110,43 @@ class IntegerResult(NodeTraversalResult):
         return self.data + other
 
 
+class ListResult(NodeTraversalResult):
+    @classmethod
+    def default(cls):
+        return []
+
+    def __iadd__(self, other):
+        super().__iadd__(other)
+        if isinstance(other, ListResult):
+            other_data = other.data
+        else:
+            other_data = other
+        self.data += other_data
+        return self
+
+    def __add__(self, other):
+        result = copy.deepcopy(self)
+        result += other
+        return result
+
+    def __radd__(self, other):
+        return self.data + other
+
+
 def dfs(node, fn, result_cls=NoResult, indent=0, **kwargs):
     result = result_cls()
-    result += fn(node=node, indent=indent, result_cls=result_cls, **kwargs) or 0
+    fn_result = (
+        fn(node=node, indent=indent, result_cls=result_cls, **kwargs)
+        or result_cls.default()
+    )
+    result += fn_result
     if not result.should_recurse_children:
         return result
     for c in node.children:
-        result += dfs(c, fn, result_cls=result_cls, indent=indent + 1, **kwargs) or 0
+        result += (
+            dfs(c, fn, result_cls=result_cls, indent=indent + 1, **kwargs)
+            or result_cls.default()
+        )
     return result
 
 
@@ -145,52 +182,45 @@ parse_print(
 #%%
 
 
-def count_filenames(node, result_cls, **kwargs):
-    if node.type == "string_literal":
-        string_text = node.text.decode()
-        # all_file_exts = re.findall(
-        #     r"[\w_-]+\.[\w]+",
-        #     string_text,
-        # )
-        # for ext in all_file_exts:
-        #     print("FFF", ext)
-        found_file_exts = re.findall(
-            # I got this list of filenames by printing all patterns matching r"[\w_-]+*\.[\w]+", then manually filtering to valid file extensions.
-            r'\.(csv|data|html|jar|java|jpg|js|jsdoc|json|jsp|tgz|txt|xml|zip)',
-            string_text,
-        )
-        num_found_file_exts = len(found_file_exts)
-        if num_found_file_exts > 0:
-            print("found", num_found_file_exts, "file extensions", found_file_exts, "in literal string", string_text)
-            return num_found_file_exts
-    return 0
+def print_method_length(node, **kwargs):
+    if node.type == "method_declaration":
+        method_text = node.text.decode()
+        return [{"tokens": len(method_text), "lines": len(method_text.splitlines())}]
+    return []
 
 
-def test_filenames_present(filename):
+def test_method_length(filename):
     tree = parse_file(filename)
     return dfs(
         tree.root_node,
-        fn=count_filenames,
-        result_cls=IntegerResult,
+        fn=print_method_length,
+        result_cls=ListResult,
     )
 
 
-test_filenames_present(
+test_method_length(
     "/home/benjis/code/bug-benchmarks/defects4j/projects/Chart_1b/tests/org/jfree/chart/annotations/junit/CategoryLineAnnotationTests.java"
 )
 
 #%%
 # print number of filenames in all test methods
 import re
+import numpy as np
+import tqdm as tqdm
 
 projects_root = "/home/benjis/code/bug-benchmarks/defects4j/projects"
-all_filenames_present = 0
-for project in projects:
+all_data = {
+    "tokens": [],
+    "lines": [],
+}
+for project in tqdm.tqdm(projects, desc="projects"):
     project_root = os.path.join(projects_root, project + "_1b")
     with open(os.path.join(project_root, "defects4j.build.properties")) as properties_f:
         test_prefix = re.findall(r"d4j.dir.src.tests=(.*)", properties_f.read())[0]
     with open(os.path.join(project_root, "tests.all")) as test_f:
-        for test_class in test_f:
+        test_classes = test_f.readlines()
+        # test_classes = tqdm.tqdm(test_classes, position=1, desc="classes")
+        for test_class in test_classes:
             test_class = test_class.strip()
             test_filename = "/".join(test_class.split("."))
             if "$" in test_filename:
@@ -206,8 +236,12 @@ for project in projects:
                 )
                 continue
 
-            all_filenames_present += test_filenames_present(test_filepath)
+            method_lengths = test_method_length(test_filepath)
+            for d in method_lengths.data:
+                all_data["tokens"].append(d["tokens"])
+                all_data["lines"].append(d["lines"])
 
-print(all_filenames_present, "filenames present")
+print("average method had", np.average(all_data["tokens"]), "tokens")
+print("average method had", np.average(all_data["lines"]), "lines")
 
 # %%

@@ -8,3 +8,6 @@ project_repos/*
 !project_repos/get_repos.sh
 major/
 work/
+/*.txt
+/*.log
+parse/build/languages.so
