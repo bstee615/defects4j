@@ -104,7 +104,16 @@ project-specific build file ("project_id"/"project_id".build.xml) for the
     Run developer-written tests
 -->
     <target name="run.dev.tests" depends="compile.tests,update.all.tests" description="Run unit tests">
-        <junit printsummary="yes" haltonfailure="no" haltonerror="no" fork="no" showOutput="true">
+        <!-- fork="yes" is required for the jvm argument to be passed. -->
+        <!-- We pass forkMode="once" in order to reduce overhead of forking forks. -->
+        <junit printsummary="yes" haltonfailure="no" haltonerror="no" fork="yes" forkMode="once" showOutput="true">
+            <!-- https://kupczynski.info/posts/remote-debug-junit-tests-run-from-ant/ -->
+            <jvmarg value="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=8787"/>
+            
+            <!-- https://stackoverflow.com/a/3848166 -->
+            <!-- <jvmarg value="-Xdebug" /> -->
+            <!-- <jvmarg value="-Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5432" /> -->
+            
             <classpath>
                 <!-- Make sure that instrumented classes appear at the beginning of the
                      classpath -->
